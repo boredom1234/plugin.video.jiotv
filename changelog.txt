@@ -1,3 +1,6 @@
+[- 2.3.4 -]
+[added] category and language filters
+
 [- 2.3.3 -]
 [added] updated epg url
 [added] set epg cache to false

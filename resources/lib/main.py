@@ -13,7 +13,7 @@ from codequick.script import Settings
 from codequick.storage import PersistentDict
 
 # add-on imports
-from resources.lib.utils import getTokenParams, getHeaders, isLoggedIn, login as ULogin, logout as ULogout, check_addon, sendOTPV2, get_local_ip, getChannelHeaders, quality_to_enum, _setup, kodi_rpc, Monitor, getCachedChannels, getCachedDictionary, cleanLocalCache, getFeatured
+from resources.lib.utils import getTokenParams, getHeaders, isLoggedIn, login as ULogin, logout as ULogout, check_addon, sendOTPV2, get_local_ip, getChannelHeaders, quality_to_enum, _setup, kodi_rpc, Monitor, getCachedChannels, getCachedDictionary, cleanLocalCache, getFeatured, getCachedFilteredCategory, getCachedFilteredLang
 from resources.lib.constants import GET_CHANNEL_URL, IMG_CATCHUP, PLAY_URL, IMG_CATCHUP_SHOWS, CATCHUP_SRC, M3U_SRC, EPG_SRC, M3U_CHANNEL, IMG_CONFIG, EPG_PATH
 
 # additional imports
@@ -46,17 +46,57 @@ def root(plugin):
         },
         "callback": Route.ref("/resources/lib/main:show_featured")
     })
-    for e in ["Genres", "Languages"]:
-        yield Listitem.from_dict(**{
-            "label": e,
-            # "art": {
-            #     "thumb": CONFIG[e][0].get("tvImg"),
-            #     "icon": CONFIG[e][0].get("tvImg"),
-            #     "fanart": CONFIG[e][0].get("promoImg"),
-            # },
-            "callback": Route.ref("/resources/lib/main:show_listby"),
-            "params": {"by": e}
+    yield Listitem.from_dict(**{
+        "label": "Categories",
+        "art": {
+            "thumb": IMG_CATCHUP_SHOWS + "cms/TKSS_Carousal1.jpg",
+            "icon": IMG_CATCHUP_SHOWS + "cms/TKSS_Carousal1.jpg",
+            "fanart": IMG_CATCHUP_SHOWS + "cms/TKSS_Carousal1.jpg",
+        },
+        "callback": Route.ref("/resources/lib/main:show_tv"),
+        "params": {"mode": "cat"}
+    })
+    yield Listitem.from_dict(**{
+        "label": "Languages",
+        "art": {
+            "thumb": IMG_CATCHUP_SHOWS + "cms/TKSS_Carousal1.jpg",
+            "icon": IMG_CATCHUP_SHOWS + "cms/TKSS_Carousal1.jpg",
+            "fanart": IMG_CATCHUP_SHOWS + "cms/TKSS_Carousal1.jpg",
+        },
+        "callback": Route.ref("/resources/lib/main:show_tv"),
+        "params": {"mode": "lang"}
+    })
+
+@Route.register
+def show_tv(plugin, mode='cat'):
+    if(mode == 'lang'):
+        selectedLanguagesChannels = getCachedFilteredLang()
+        finalSelection = getCachedFilteredCategory(selectedLanguagesChannels)
+    else:
+        selectedCategoryChannels = getCachedFilteredCategory()
+        finalSelection = getCachedFilteredLang(selectedCategoryChannels)
+
+    for each in finalSelection:
+        if each.get("channelIdForRedirect"):
+            continue
+        litm = Listitem.from_dict(**{
+            "label": each.get("channel_name"),
+            "art": {
+                "thumb": IMG_CATCHUP + each.get("logoUrl"),
+                "icon": IMG_CATCHUP + each.get("logoUrl"),
+                "fanart": IMG_CATCHUP + each.get("logoUrl"),
+                "clearlogo": IMG_CATCHUP + each.get("logoUrl"),
+                "clearart": IMG_CATCHUP + each.get("logoUrl"),
+            },
+            "callback": play,
+            "params": {
+                "channel_id": each.get("channel_id")
+            }
         })
+        if each.get("isCatchupAvailable"):
+            litm.context.container(show_epg, "Catchup",
+                                   0, each.get("channel_id"))
+        yield litm
 
 
 # Shows Featured Content
@@ -129,76 +169,6 @@ def show_featured(plugin, id=None):
                 "callback": Route.ref("/resources/lib/main:show_featured"),
                 "params": {"id": each.get("id")}
             })
-
-
-# Shows Filter options
-@Route.register
-def show_listby(plugin, by):
-    dictionary = getCachedDictionary()
-    GENRE_MAP = dictionary.get("channelCategoryMapping")
-    LANG_MAP = dictionary.get("languageIdMapping")
-    langValues = list(LANG_MAP.values())
-    langValues.append("Extra")
-    CONFIG = {
-        "Genres": GENRE_MAP.values(),
-        "Languages": langValues,
-    }
-    for each in CONFIG[by]:
-        tvImg = IMG_CONFIG[by].get(each, {}).get("tvImg", ""),
-        promoImg = IMG_CONFIG[by].get(each, {}).get("promoImg", "")
-        yield Listitem.from_dict(**{
-            "label": each,
-            "art": {
-                "thumb": tvImg,
-                "icon": tvImg,
-                "fanart": promoImg
-            },
-            "callback": Route.ref("/resources/lib/main:show_category"),
-            "params": {"categoryOrLang": each, "by": by}
-        })
-
-
-# Shows channels by selected filter/category
-@Route.register
-def show_category(plugin, categoryOrLang, by):
-    resp = getCachedChannels()
-    dictionary = getCachedDictionary()
-    GENRE_MAP = dictionary.get("channelCategoryMapping")
-    LANG_MAP = dictionary.get("languageIdMapping")
-
-    def fltr(x):
-        fby = by.lower()[:-1]
-        if fby == "genre":
-            return GENRE_MAP[str(x.get("channelCategoryId"))] == categoryOrLang
-        else:
-            if (categoryOrLang == 'Extra'):
-                return str(x.get("channelLanguageId")) not in LANG_MAP.keys()
-            else:
-                if (str(x.get("channelLanguageId")) not in LANG_MAP.keys()):
-                    return False
-                return LANG_MAP[str(x.get("channelLanguageId"))] == categoryOrLang
-
-    for each in filter(fltr, resp):
-        if each.get("channelIdForRedirect"):
-            continue
-        litm = Listitem.from_dict(**{
-            "label": each.get("channel_name"),
-            "art": {
-                "thumb": IMG_CATCHUP + each.get("logoUrl"),
-                "icon": IMG_CATCHUP + each.get("logoUrl"),
-                "fanart": IMG_CATCHUP + each.get("logoUrl"),
-                "clearlogo": IMG_CATCHUP + each.get("logoUrl"),
-                "clearart": IMG_CATCHUP + each.get("logoUrl"),
-            },
-            "callback": play,
-            "params": {
-                "channel_id": each.get("channel_id")
-            }
-        })
-        if each.get("isCatchupAvailable"):
-            litm.context.container(show_epg, "Catchup",
-                                   0, each.get("channel_id"))
-        yield litm
 
 
 # Shows EPG container from Context menu

@@ -191,6 +191,61 @@ def getCachedDictionary():
                 Script.notify("Connection error ", "Retry after sometime")
         return db.get("dictionary", False)
     
+def getCachedFilteredCategory(selectedLanguagesChannels=None):
+    with PersistentDict("localdb") as db:
+        selectedCategoryChannels = db.get("selectedCategoryChannels", False)
+        if not selectedCategoryChannels or selectedLanguagesChannels:
+            dictionary = getCachedDictionary()
+            CATEGORY_MAP = dictionary.get("channelCategoryMapping")
+            channelList = selectedLanguagesChannels or getCachedChannels()
+            categoryValues = list(CATEGORY_MAP.values())
+            catObj = {}
+            mapped_categories = []
+
+            for l in categoryValues:
+                catObj[l] = [x for x in channelList if CATEGORY_MAP.get(str(
+                    x.get("channelCategoryId")), '') == l and not x.get("channelIdForRedirect")]
+                llen = len(catObj[l])
+                if (llen > 0):
+                    lstr = f"{l}({llen})"
+                    mapped_categories.append(lstr)
+
+            catObj["All"] = channelList
+            mapped_categories.insert(0, f"All({len(catObj['All'])})")
+            db["mapped_categories"] = mapped_categories
+            dialog = Dialog()
+            categoryIndex = dialog.select('Select category', mapped_categories, preselect=0)
+            selectedCategoryChannels = catObj[mapped_categories[categoryIndex].split('(')[0]]
+            return selectedCategoryChannels
+        return db.get("selectedCategoryChannels", False)
+    
+def getCachedFilteredLang(selectedCategoryChannels=None):
+    with PersistentDict("localdb") as db:
+        mapped_categories = db.get("selectedLanguagesChannels", False)
+        if not mapped_categories or selectedCategoryChannels:
+            channelList = selectedCategoryChannels or getCachedChannels()
+            dictionary = getCachedDictionary()
+            LANG_MAP = dictionary.get("languageIdMapping")
+            langValues = list(LANG_MAP.values())
+            mapped_languages = []
+            langObj = {}
+
+            for c in langValues:
+                langObj[c] = [x for x in channelList if LANG_MAP.get(str(
+                    x.get("channelLanguageId")), '') == c and not x.get("channelIdForRedirect")]
+                clen = len(langObj[c])
+                if (clen > 0):
+                    cstr = f"{c}({clen})"
+                    mapped_languages.append(cstr)
+
+            langObj["All"] = channelList
+            mapped_languages.insert(0, f"All({len(langObj['All'])})")
+            dialog = Dialog()
+            languageIndex = dialog.select('Select language', mapped_languages, preselect=0)
+            selectedLanguagesChannels = langObj[mapped_languages[languageIndex].split('(')[0]]
+            return selectedLanguagesChannels
+        return db.get("selectedLanguagesChannels", False)
+    
 def getFeatured():
     try:
         resp = urlquick.get(FEATURED_SRC, headers={
@@ -205,8 +260,13 @@ def getFeatured():
     
 def cleanLocalCache():
     with PersistentDict("localdb") as db:
-        del db["channelList"]
-        del db["dictionary"]
+        try:
+            del db["channelList"]
+            del db["dictionary"]
+            del db["selectedCategoryChannels"]
+            del db["selectedLanguagesChannels"]
+        except:
+            Script.notify("Cache cleared ", "")
 
 
 def getChannelHeaders():
